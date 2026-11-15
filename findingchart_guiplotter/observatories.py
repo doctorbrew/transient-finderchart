@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from math import atan2, cos, radians, sin, tan
 
 import astropy.units as u
-from astropy.coordinates import EarthLocation, SkyCoord
+from astropy.coordinates import AltAz, EarthLocation, SkyCoord
 from astropy.time import Time
 
 
@@ -25,7 +25,10 @@ class Observatory:
 
 
 OBSERVATORIES: dict[str, Observatory] = {
-    "La Palma": Observatory("La Palma", 28.7606, -17.8792, 2326.0),
+    # NOT published GPS position: 28d45m26.2s N, 17d53m06.3s W, 2382 m.
+    # https://www.not.iac.es/telescope/tti/technical-details.html
+    # Keep the historical key for saved Swift/Qt settings compatibility.
+    "La Palma": Observatory("La Palma (NOT)", 28 + 45 / 60 + 26.2 / 3600, -(17 + 53 / 60 + 6.3 / 3600), 2382.0),
     "Mauna Kea, Hawaii": Observatory("Mauna Kea, Hawaii", 19.8206, -155.4681, 4205.0),
     "Paranal, Chile": Observatory("Paranal, Chile", -24.6272, -70.4042, 2635.0),
     "Palomar Observatory": Observatory("Palomar Observatory", 33.3563, -116.8648, 1712.0),
@@ -36,7 +39,20 @@ OBSERVATORIES: dict[str, Observatory] = {
 
 
 def parallactic_angle_deg(target: SkyCoord, observatory: Observatory, when: Time) -> float:
-    """Return parallactic angle in degrees east of north."""
+    """Return PA east of north for a target above the geometric horizon.
+
+    This check excludes atmospheric refraction, terrain and telescope limits;
+    it is not a full assessment of observing conditions.
+    """
+    altitude = target.transform_to(
+        AltAz(obstime=when, location=observatory.location, pressure=0 * u.hPa)
+    ).alt.deg
+    if altitude <= 0:
+        raise ValueError(
+            f"Target is at or below the horizon (altitude {altitude:.2f} deg) "
+            f"at {observatory.name}, {when.utc.isot} UTC. "
+            "Choose an observation time when the target is above the horizon."
+        )
     lst = when.sidereal_time("apparent", longitude=observatory.location.lon)
     hour_angle = (lst - target.ra).wrap_at(180 * u.deg).rad
     dec = target.dec.rad

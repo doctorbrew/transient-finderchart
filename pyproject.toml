@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "findingchart-guiplotter"
-version = "0.1.0"
+version = "0.2.0"
 description = "PySide6 finding chart plotter for supernova observations."
 readme = "README.md"
 requires-python = ">=3.9"

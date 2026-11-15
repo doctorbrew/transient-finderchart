@@ -3,7 +3,6 @@ from __future__ import annotations
 import sys
 import traceback
 import warnings
-from datetime import datetime
 from pathlib import Path
 
 import astropy.units as u
@@ -15,6 +14,7 @@ from .qt_compat import (
     QCheckBox,
     QComboBox,
     QDateTimeEdit,
+    QDateTime,
     QDoubleSpinBox,
     QFileDialog,
     QFormLayout,
@@ -446,13 +446,15 @@ class MainWindow(QMainWindow):
         obs_form = QFormLayout(obs_box)
         self.observatory_combo = QComboBox()
         self.observatory_combo.addItems(list(OBSERVATORIES.keys()))
-        self.datetime_edit = QDateTimeEdit(datetime.now())
+        self.datetime_edit = QDateTimeEdit()
+        self.datetime_edit.setTimeSpec(Qt.TimeSpec.UTC)
+        self.datetime_edit.setDateTime(QDateTime.currentDateTimeUtc())
         self.datetime_edit.setCalendarPopup(True)
-        self.datetime_edit.setDisplayFormat("yyyy-MM-dd HH:mm:ss")
-        self.parallactic_button = QPushButton("Set PA to parallactic now")
+        self.datetime_edit.setDisplayFormat("yyyy-MM-dd HH:mm:ss 'UTC'")
+        self.parallactic_button = QPushButton("Set PA to parallactic at selected UTC time")
         self.parallactic_button.clicked.connect(self.set_pa_to_parallactic)
         obs_form.addRow("Observatory", self.observatory_combo)
-        obs_form.addRow("Date/time", self.datetime_edit)
+        obs_form.addRow("Date/time (UTC)", self.datetime_edit)
         obs_form.addRow(self.parallactic_button)
         layout.addWidget(obs_box)
 
@@ -750,10 +752,14 @@ class MainWindow(QMainWindow):
     def set_pa_to_parallactic(self) -> None:
         if self.target is None:
             return
-        q = self.parallactic_pa_deg()
+        try:
+            q = self.parallactic_pa_deg()
+        except ValueError as exc:
+            self.show_error(str(exc))
+            return
         self.pa_spin.setValue(q)
         self.slit_check.setChecked(True)
-        self.status_label.setText(f"Fixed slit PA set to current parallactic angle {q:.2f} deg")
+        self.status_label.setText(f"Fixed slit PA set to parallactic angle {q:.2f} deg at selected UTC time")
 
     def update_pa_from_mode(self) -> None:
         self.update_chart_from_controls()

@@ -9,7 +9,7 @@ import os
 import pickle
 import sys
 import traceback
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -213,12 +213,14 @@ def _save_chart_with_marker_payload(output_path: Path, image, target, settings, 
 
 
 def _metadata() -> dict[str, Any]:
+    from findingchart_guiplotter import __version__
     from findingchart_guiplotter.image_fetchers import SURVEY_BANDS, available_surveys
     from findingchart_guiplotter.observatories import OBSERVATORIES
 
     return {
         "ok": True,
         "action": "metadata",
+        "version": __version__,
         "surveys": available_surveys(),
         "bands": SURVEY_BANDS,
         "observatories": list(OBSERVATORIES.keys()),
@@ -348,13 +350,19 @@ def _settings(payload: dict[str, Any], target, catalog_sources: list[Any]):
     raw_time = str(payload.get("observationTimeISO") or "").strip()
     if raw_time:
         observation_time = datetime.fromisoformat(raw_time.replace("Z", "+00:00"))
+        if observation_time.tzinfo is None:
+            raise ValueError("Observation time requires an explicit timezone: use UTC (Z) or an ISO 8601 offset.")
+        observation_time = observation_time.astimezone(timezone.utc)
 
     slit_pa = float(payload.get("slitPaDeg", 0.0))
-    if payload.get("useParallacticPA", False) and observation_time is not None:
+    if payload.get("useParallacticPA", False):
+        if observation_time is None:
+            raise ValueError("An observation time in UTC is required for parallactic PA.")
         observatory = OBSERVATORIES.get(str(payload.get("observatoryName") or "La Palma"))
-        if observatory is not None:
-            coord = SkyCoord(target.ra_deg * u.deg, target.dec_deg * u.deg)
-            slit_pa = float(parallactic_angle_deg(coord, observatory, Time(observation_time)))
+        if observatory is None:
+            raise ValueError("Select a known observatory for parallactic PA.")
+        coord = SkyCoord(target.ra_deg * u.deg, target.dec_deg * u.deg)
+        slit_pa = float(parallactic_angle_deg(coord, observatory, Time(observation_time)))
 
     selected = str(payload.get("selectedCatalogSourceID") or "")
     return ChartSettings(

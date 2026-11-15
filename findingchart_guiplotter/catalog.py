@@ -8,11 +8,12 @@ import requests
 from astropy import units as u
 from astropy.coordinates import SkyCoord
 
+from . import __version__
 from .models import Target
 
 GAIA_TAP_SYNC_URL = "https://gea.esac.esa.int/tap-server/tap/sync"
 GAIA_VIZIER_TSV_URL = "https://vizier.cds.unistra.fr/viz-bin/asu-tsv"
-REQUEST_HEADERS = {"User-Agent": "transient-finderchart/0.1"}
+REQUEST_HEADERS = {"User-Agent": f"transient-finderchart/{__version__}"}
 DEFAULT_CATALOG_MAX_DISTANCE_ARCSEC = 10.0
 
 

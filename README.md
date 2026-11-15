@@ -3,7 +3,6 @@
 [![Python 3.9+](https://img.shields.io/badge/python-3.9%2B-blue.svg)](pyproject.toml)
 [![Qt GUI](https://img.shields.io/badge/GUI-PySide6%20%2F%20PyQt6-green.svg)](findingchart_guiplotter/qt_compat.py)
 [![macOS SwiftUI](https://img.shields.io/badge/macOS%2014%2B-SwiftUI-black.svg)](findingchart_macapp)
-[![Tests](https://img.shields.io/badge/tests-62%20passed-brightgreen.svg)](tests)
 [![License: GPLv3](https://img.shields.io/badge/license-GPLv3-blue.svg)](LICENSE)
 
 Finding-chart tool for supernovae and other transients, available as a Qt desktop GUI and a native macOS app. Resolve TNS or add manual targets, fetch archival survey cutouts, add a visual fake source and observing overlays (slit and blind offset star), then export the finding chart as PNG, JPEG, or PDF charts.
@@ -93,8 +92,11 @@ Without credentials, the app uses public TNS search where possible.
 - Failed Legacy Survey FITS requests fall back to JPEG with approximate centered TAN WCS.
 - Gaia proper motion is displayed but is not propagated to the observing epoch.
 - Slit and blind-offset PA are measured east of north.
+- Both desktop observation-time controls display and edit UTC, independent of the computer's timezone. The native bridge requires ISO 8601 timestamps with `Z` or an explicit offset and normalizes them to UTC.
+- Parallactic PA is rejected at or below the geometric horizon; errors report altitude, observatory and UTC time. This is a horizon check, not a check of twilight, terrain, airmass or telescope limits. Fixed sky PA remains available.
+- The historical `La Palma` preset now uses the [Nordic Optical Telescope's published GPS position](https://www.not.iac.es/telescope/tti/technical-details.html): 28°45′26.2″ N, 17°53′06.3″ W, 2382 m.
 - The fake source is visual only, not a calibrated photometric simulation.
 - Web exports accumulate in `web_exports/`; native outputs and caches use `findingchart_macapp/rendered_charts/`.
-- Run `python3 -m pytest -q` for the 62-test offline suite.
+- Run `python3 -m pytest -q` for the offline suite. Qt checks additionally run with `.venv/bin/python -m unittest discover -s tests -p test_observation_qt.py` when Qt is installed in `.venv`.
 - Run `python3 tests/psf_diagnostics.py` to regenerate plots in `tests/figures/`.
 - See [docs/IMPLEMENTATION_LOG.md](docs/IMPLEMENTATION_LOG.md) for the implementation history, audit, roadmap, and detailed limitations.

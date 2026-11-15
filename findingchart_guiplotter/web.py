@@ -8,6 +8,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import unquote, urlparse
 
+from . import __version__
 from .catalog import DEFAULT_CATALOG_MAX_DISTANCE_ARCSEC, query_catalog_sources
 from .image_fetchers import fetch_image, mode_and_band_from_filter_choice, preferred_filter_choice
 from .models import ChartSettings, ImageRequest, Target
@@ -18,7 +19,7 @@ WEB_OUTPUT_DIR = Path("web_exports")
 
 
 class FindingChartWebHandler(BaseHTTPRequestHandler):
-    server_version = "FindingChartWeb/0.1"
+    server_version = f"FindingChartWeb/{__version__}"
 
     def do_GET(self) -> None:
         request_path = urlparse(self.path).path

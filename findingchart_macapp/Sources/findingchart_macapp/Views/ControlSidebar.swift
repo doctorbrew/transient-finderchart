@@ -157,7 +157,8 @@ struct ControlSidebar: View {
             Picker("Observatory", selection: $vm.params.observatoryName) {
                 ForEach(vm.observatories, id: \.self) { Text($0).tag($0) }
             }
-            DatePicker("Observation", selection: observationDate, displayedComponents: [.date, .hourAndMinute])
+            DatePicker("Observation (UTC)", selection: observationDate, displayedComponents: [.date, .hourAndMinute])
+                .environment(\.timeZone, TimeZone(secondsFromGMT: 0)!)
                 .font(AppFont.body(12))
                 .foregroundStyle(Palette.textSecondary)
             Grid(alignment: .leading, horizontalSpacing: 8, verticalSpacing: 8) {
