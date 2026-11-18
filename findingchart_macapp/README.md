@@ -36,8 +36,8 @@ echo '{"action":"metadata"}' | python3 bridge/findingchart_bridge.py --repo-dir 
 ## Workflow
 
 1. Resolve a TNS target or enter manual RA/Dec.
-2. Download and cache an archive cutout.
-3. Adjust contrast, color, slit, inset, overlay, and fake-source controls; changes trigger a debounced render from the cached image.
+2. Download an archive cutout or open a local observed FITS image that contains the target position. Select **Solve observed WCS** and enter an approximate pixel scale when the image lacks usable WCS. This requires local SExtractor, Astrometry.net, and index files.
+3. Adjust contrast, color, slit, inset, overlay, and optional fake-source controls; changes trigger a debounced render from the cached image. Fake-source injection starts off.
 4. Query Gaia DR3, Pan-STARRS DR2, or both. Catalog rows are sorted by target distance; selecting one highlights the marker and displays blind-offset details.
 5. Save a 2000-DPI PDF or 400-DPI JPEG.
 

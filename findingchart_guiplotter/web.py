@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import base64
+import binascii
 import json
 import mimetypes
 import uuid
@@ -9,9 +11,9 @@ from pathlib import Path
 from urllib.parse import unquote, urlparse
 
 from .catalog import DEFAULT_CATALOG_MAX_DISTANCE_ARCSEC, query_catalog_sources
-from .image_fetchers import fetch_image, mode_and_band_from_filter_choice, preferred_filter_choice
+from .image_fetchers import fetch_image, mode_and_band_from_filter_choice, preferred_filter_choice, read_observed_fits
 from .models import ChartSettings, ImageRequest, Target
-from .renderer import export_chart, measured_image_fwhm_arcsec
+from .renderer import export_chart, image_fov_arcsec, measured_image_fwhm_arcsec
 
 
 WEB_OUTPUT_DIR = Path("web_exports")
@@ -44,6 +46,8 @@ class FindingChartWebHandler(BaseHTTPRequestHandler):
 
     def read_json(self) -> dict:
         length = int(self.headers.get("Content-Length", "0"))
+        if length > 90 * 1024 * 1024:
+            raise ValueError("Observed FITS upload exceeds the 64 MB limit.")
         body = self.rfile.read(length).decode("utf-8")
         return json.loads(body)
 
@@ -97,6 +101,26 @@ def render_from_payload(payload: dict) -> str:
         size_arcmin=float(payload.get("size_arcmin") or 3.0),
         pixel_scale_arcsec=float(payload.get("pixel_scale_arcsec") or 0.262),
     )
+    if str(payload.get("image_source") or "archive") == "observed":
+        encoded = str(payload.get("observed_fits_base64") or "")
+        if not encoded:
+            raise ValueError("Choose an observed FITS image.")
+        try:
+            fits_payload = base64.b64decode(encoded, validate=True)
+        except binascii.Error as exc:
+            raise ValueError("Observed FITS upload is invalid.") from exc
+        if len(fits_payload) > 64 * 1024 * 1024:
+            raise ValueError("Observed FITS upload exceeds the 64 MB limit.")
+        name = Path(str(payload.get("observed_filename") or "observed.fits")).stem
+        solve_wcs = payload_bool(payload, "solve_observed_wcs", False)
+        image = read_observed_fits(
+            fits_payload, name, target, solve_wcs=solve_wcs,
+            pixel_scale_arcsec=request.pixel_scale_arcsec if solve_wcs else None,
+            align_north_up=payload_bool(payload, "align_observed_north_up", True),
+        )
+        request.size_arcmin = image_fov_arcsec(image) / 60.0
+    else:
+        image = fetch_image(target, request)
     catalog_sources = []
     catalog = str(payload.get("catalog") or "None")
     if catalog != "None":
@@ -106,7 +130,6 @@ def render_from_payload(payload: dict) -> str:
             catalog,
             max_distance_arcsec=float(payload.get("catalog_max_distance_arcsec") or DEFAULT_CATALOG_MAX_DISTANCE_ARCSEC),
         )
-    image = fetch_image(target, request)
     measured_fwhm_arcsec = None
     try:
         measured_fwhm_arcsec, _ = measured_image_fwhm_arcsec(image, target)
@@ -120,7 +143,7 @@ def render_from_payload(payload: dict) -> str:
         psf_fwhm_arcsec=float(payload.get("psf_fwhm_arcsec") or measured_fwhm_arcsec or 1.0),
         psf_model=str(payload.get("psf_model") or "moffat"),
         show_slit=payload_bool(payload, "show_slit", False),
-        show_injected_source=payload_bool(payload, "show_injected_source", True),
+        show_injected_source=payload_bool(payload, "show_injected_source", False),
         show_crosshair=payload_bool(payload, "show_crosshair", True),
         show_compass=payload_bool(payload, "show_compass", True),
         contrast_stretch=str(payload.get("contrast_stretch") or "arcsinh"),
@@ -207,6 +230,11 @@ INDEX_HTML = """<!doctype html>
         </fieldset>
         <fieldset>
           <legend>Image</legend>
+          <label>Source <select name="image_source"><option value="archive">Archive survey</option><option value="observed">Observed FITS</option></select></label>
+          <label>Observed FITS file <input name="observed_fits_file" type="file" accept=".fits,.fit,.fts"></label>
+          <label class="check"><input type="checkbox" name="solve_observed_wcs"> Solve WCS with SExtractor + Astrometry.net</label>
+          <label class="check"><input type="checkbox" name="align_observed_north_up" checked> Align observed image north up, east left (crop edges)</label>
+          <small>Observed FITS needs celestial WCS unless solving is selected. Use Pixel scale below as an approximate hint. The target must be in the image.</small>
           <label>Survey <select name="survey"><option>Pan-STARRS</option><option>Legacy Survey</option><option>DSS2</option><option>2MASS</option></select></label>
           <label>Filter <select name="filter"><option>color</option><option>g</option><option>r</option><option>i</option><option>z</option><option>y</option><option>red</option><option>blue</option><option>ir</option><option>J</option><option>H</option><option>K</option></select></label>
           <label>Stretch <select name="contrast_stretch"><option>arcsinh</option><option>linear</option><option>sqrt</option><option>log</option></select></label>
@@ -214,7 +242,7 @@ INDEX_HTML = """<!doctype html>
           <label>Label color <select name="annotation_color"><option>xkcd:bright red</option><option>xkcd:dodger blue</option><option>xkcd:black</option><option>xkcd:white</option><option>xkcd:turquoise</option><option>xkcd:bright yellow</option></select></label>
           <div class="row">
             <label>Field arcmin <input name="size_arcmin" value="3.0"></label>
-            <label>Pixscale <input name="pixel_scale_arcsec" value="0.262"></label>
+            <label>Pixscale / WCS hint <input name="pixel_scale_arcsec" value="0.262"></label>
           </div>
           <label>Contrast <input name="contrast_percentile" type="range" min="95.0" max="99.9" step="0.1" value="99.3"></label>
         </fieldset>
@@ -222,7 +250,7 @@ INDEX_HTML = """<!doctype html>
           <legend>Overlays</legend>
           <label>Catalog <select name="catalog"><option>None</option><option>Gaia DR3</option><option>Pan-STARRS DR2</option><option>Gaia DR3 + Pan-STARRS DR2</option></select></label>
           <label>Catalog max distance <input name="catalog_max_distance_arcsec" value="10.0"></label>
-          <label class="check"><input type="checkbox" name="show_injected_source" checked> Inject SN</label>
+          <label class="check"><input type="checkbox" name="show_injected_source"> Inject SN</label>
           <label>SN mag <input name="psf_magnitude" type="number" min="8" max="24" step="0.1" value="18.0"></label>
           <label>PSF model <select name="psf_model"><option>moffat</option><option>empirical core</option><option>empirical hybrid</option><option>gaussian taper</option></select></label>
           <label>Zoom-in panel <input name="inset_zoom_factor" type="range" min="3" max="12" step="1" value="6"></label>
@@ -254,12 +282,25 @@ INDEX_HTML = """<!doctype html>
     form.addEventListener("submit", async (event) => {
       event.preventDefault();
       const data = Object.fromEntries(new FormData(form).entries());
-      for (const name of ["show_injected_source", "show_crosshair", "show_compass", "show_slit"]) {
+      delete data.observed_fits_file;
+      for (const name of ["solve_observed_wcs", "align_observed_north_up", "show_injected_source", "show_crosshair", "show_compass", "show_slit"]) {
         data[name] = form.elements[name].checked;
       }
       button.disabled = true;
       status.textContent = "Rendering...";
       try {
+        if (data.image_source === "observed") {
+          const file = form.elements.observed_fits_file.files[0];
+          if (!file) throw new Error("Choose an observed FITS image.");
+          if (file.size > 64 * 1024 * 1024) throw new Error("Observed FITS upload exceeds 64 MB.");
+          const bytes = new Uint8Array(await file.arrayBuffer());
+          let binary = "";
+          for (let start = 0; start < bytes.length; start += 32768) {
+            binary += String.fromCharCode(...bytes.subarray(start, start + 32768));
+          }
+          data.observed_fits_base64 = btoa(binary);
+          data.observed_filename = file.name;
+        }
         const response = await fetch("/api/render", {
           method: "POST",
           headers: { "Content-Type": "application/json" },

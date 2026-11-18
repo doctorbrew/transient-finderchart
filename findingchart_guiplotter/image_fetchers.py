@@ -124,6 +124,117 @@ def _read_fits_from_bytes(payload: bytes, survey: str, band: str, mode: str, url
     return ImageData(data=data, wcs=wcs.celestial, survey=survey, band=band, mode=mode, source_url=url)
 
 
+def _windowed_detector_wcs(image_header: fits.Header, primary_header: fits.Header, shape: tuple[int, int]) -> WCS | None:
+    """Translate a full-detector WCS onto an unbinned DETWIN1 image."""
+    window = primary_header.get("DETWIN1") or image_header.get("DETWIN1")
+    match = re.fullmatch(r"\[\s*(\d+)\s*:\s*(\d+)\s*,\s*(\d+)\s*:\s*(\d+)\s*\]", str(window))
+    if not match or "CRPIX1" not in image_header or "CRPIX2" not in image_header:
+        return None
+    x_start, x_end, y_start, y_end = map(int, match.groups())
+    if x_start < 1 or y_start < 1 or (x_end - x_start + 1, y_end - y_start + 1) != (shape[1], shape[0]):
+        return None
+    for key in ("DETXBIN", "DETYBIN"):
+        if (image_header.get(key) or primary_header.get(key) or 1) != 1:
+            return None
+    header = image_header.copy()
+    header["CRPIX1"] -= x_start - 1
+    header["CRPIX2"] -= y_start - 1
+    return WCS(header)
+
+
+def _observed_chart_source_label(primary_header: fits.Header, image_header: fits.Header) -> str:
+    """Use the FITS acquisition identity in the same source-band title pattern as surveys."""
+    def value(*keys: str) -> str:
+        for key in keys:
+            for header in (primary_header, image_header):
+                item = str(header.get(key) or "").strip()
+                if item:
+                    return item
+        return ""
+
+    telescope = value("TELESCOP")
+    instrument = value("INSTRUME").replace("_FASU", "")
+    band = value("FILTER", "ALFLTNM", "FILTER2", "FILTER1")
+    if band.casefold() == "open":
+        band = ""
+    source = "/".join(part for part in (telescope, instrument) if part)
+    return f"{source}-{band}" if source and band else source
+
+
+def read_observed_fits(
+    payload: bytes, name: str, target: Target, *,
+    solve_wcs: bool = False, pixel_scale_arcsec: float | None = None,
+    align_north_up: bool = True,
+) -> ImageData:
+    """Read a local science image without changing its pixel values."""
+    try:
+        with fits.open(io.BytesIO(payload)) as hdul:
+            image_extension = next((index for index, hdu in enumerate(hdul) if getattr(hdu, "data", None) is not None), None)
+            image_hdu = hdul[image_extension] if image_extension is not None else None
+            if image_hdu is None:
+                raise ImageFetchError("Observed FITS file contains no image data.")
+            data = np.asarray(image_hdu.data, dtype=float)
+            wcs = WCS(image_hdu.header) if not solve_wcs else None
+            chart_source_label = _observed_chart_source_label(hdul[0].header, image_hdu.header)
+            windowed_wcs = (
+                _windowed_detector_wcs(image_hdu.header, hdul[0].header, data.shape)
+                if not solve_wcs and data.ndim == 2 else None
+            )
+    except (OSError, ValueError) as exc:
+        raise ImageFetchError(f"Could not read observed FITS image: {exc}") from exc
+    if data.ndim != 2 or min(data.shape) < 2:
+        raise ImageFetchError("Observed FITS image must contain a two-dimensional image.")
+    if not np.isfinite(data).any():
+        raise ImageFetchError("Observed FITS image contains no finite pixels.")
+    if solve_wcs:
+        from .wcs_solving import WcsSolveError, solve_fits_wcs
+
+        try:
+            wcs = solve_fits_wcs(payload, target, image_extension, pixel_scale_arcsec)
+        except WcsSolveError as exc:
+            raise ImageFetchError(str(exc)) from exc
+    if not wcs.has_celestial or wcs.pixel_n_dim != 2:
+        raise ImageFetchError("Observed FITS image needs a two-dimensional celestial WCS.")
+    celestial = wcs.celestial
+    x, y = celestial.world_to_pixel_values(target.ra_deg, target.dec_deg)
+    if (not np.isfinite([x, y]).all() or not (0 <= x < data.shape[1] and 0 <= y < data.shape[0])) and windowed_wcs is not None:
+        candidate = windowed_wcs.celestial
+        candidate_x, candidate_y = candidate.world_to_pixel_values(target.ra_deg, target.dec_deg)
+        if np.isfinite([candidate_x, candidate_y]).all() and 0 <= candidate_x < data.shape[1] and 0 <= candidate_y < data.shape[0]:
+            celestial = candidate
+            x, y = candidate_x, candidate_y
+    if not np.isfinite([x, y]).all() or not (0 <= x < data.shape[1] and 0 <= y < data.shape[0]):
+        raise ImageFetchError("Target coordinates fall outside the observed image.")
+    image = ImageData(
+        data=data, wcs=celestial, survey="Observed image", band=name, mode="Single band",
+        chart_source_label=chart_source_label,
+    )
+    if align_north_up:
+        from .image_orientation import align_north_up as reproject_north_up
+
+        try:
+            image = reproject_north_up(image, target)
+        except ValueError as exc:
+            raise ImageFetchError(f"Could not align observed image north-up: {exc}") from exc
+    return image
+
+
+def load_observed_fits(
+    path: Path, target: Target, *, solve_wcs: bool = False, pixel_scale_arcsec: float | None = None,
+    align_north_up: bool = True,
+) -> ImageData:
+    path = Path(path).expanduser()
+    try:
+        image = read_observed_fits(
+            path.read_bytes(), path.stem, target, solve_wcs=solve_wcs,
+            pixel_scale_arcsec=pixel_scale_arcsec, align_north_up=align_north_up,
+        )
+    except OSError as exc:
+        raise ImageFetchError(f"Could not open observed FITS image: {exc}") from exc
+    image.local_path = path
+    return image
+
+
 def _legacy_placeholder_tile(rgb_data: np.ndarray) -> bool:
     data = np.asarray(rgb_data, dtype=float)
     if data.ndim != 3 or data.shape[-1] < 3:

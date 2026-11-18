@@ -51,6 +51,7 @@ class ImageData:
     mode: str
     source_url: str = ""
     local_path: Path | None = None
+    chart_source_label: str = ""
 
 
 @dataclass
@@ -62,7 +63,7 @@ class ChartSettings:
     psf_magnitude: float = 18.0
     psf_model: str = "moffat"
     psf_fwhm_arcsec: float = 1.0
-    show_injected_source: bool = True
+    show_injected_source: bool = False
     show_crosshair: bool = True
     show_slit: bool = False
     show_compass: bool = True

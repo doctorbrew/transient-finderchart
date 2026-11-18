@@ -48,6 +48,7 @@ from .image_fetchers import (
     available_filter_choices,
     available_surveys,
     fetch_image,
+    load_observed_fits,
     mode_and_band_from_filter_choice,
     preferred_filter_choice,
 )
@@ -160,8 +161,7 @@ class ChartCanvas(FigureCanvas):
         return nearest[1] if nearest is not None else None
 
 
-def load_image_with_fwhm_estimate(target: Target, request: ImageRequest) -> tuple[ImageData, float | None, int | None, float | None]:
-    image = fetch_image(target, request)
+def image_with_fwhm_estimate(image: ImageData, target: Target) -> tuple[ImageData, float | None, int | None, float | None]:
     try:
         measured_fwhm_arcsec, measured_star_count = measured_image_fwhm_arcsec(image, target)
     except Exception:
@@ -176,6 +176,21 @@ def load_image_with_fwhm_estimate(target: Target, request: ImageRequest) -> tupl
     except Exception:
         recommended_magnitude = None
     return image, measured_fwhm_arcsec, measured_star_count, recommended_magnitude
+
+
+def load_image_with_fwhm_estimate(target: Target, request: ImageRequest) -> tuple[ImageData, float | None, int | None, float | None]:
+    return image_with_fwhm_estimate(fetch_image(target, request), target)
+
+
+def load_observed_with_fwhm_estimate(
+    path: Path, target: Target, solve_wcs: bool, pixel_scale_arcsec: float | None,
+    align_north_up: bool = True,
+) -> tuple[ImageData, float | None, int | None, float | None]:
+    image = load_observed_fits(
+        path, target, solve_wcs=solve_wcs, pixel_scale_arcsec=pixel_scale_arcsec,
+        align_north_up=align_north_up,
+    )
+    return image_with_fwhm_estimate(image, target)
 
 
 class MainWindow(QMainWindow):
@@ -254,7 +269,7 @@ class MainWindow(QMainWindow):
         info_layout.addRow(self.use_coordinates_button)
         layout.addWidget(info_box)
 
-        box = QGroupBox("Image Cutout")
+        box = QGroupBox("Image")
         form = QFormLayout(box)
         self.survey_combo = QComboBox()
         self.survey_combo.addItems(available_surveys())
@@ -269,16 +284,24 @@ class MainWindow(QMainWindow):
         self.pixscale_spin.setSuffix(" arcsec/pix")
         self.pixscale_spin.setValue(0.262)
         self.pixscale_spin.setDecimals(3)
-        self.load_button = QPushButton("Load Image")
+        self.load_button = QPushButton("Load Archive Image")
         self.load_button.clicked.connect(self.load_image)
+        self.load_observed_button = QPushButton("Open Observed FITS...")
+        self.load_observed_button.clicked.connect(self.load_observed_image)
+        self.solve_observed_wcs_check = QCheckBox("Solve WCS with SExtractor + Astrometry.net")
+        self.align_observed_north_up_check = QCheckBox("Align observed image north up, east left")
+        self.align_observed_north_up_check.setChecked(True)
         self.survey_combo.currentTextChanged.connect(self.update_filter_choices)
         self.update_filter_choices()
         form.setVerticalSpacing(6)
         form.addRow("Survey", self.survey_combo)
         form.addRow("Filter", self.filter_combo)
         form.addRow("Field", self.size_spin)
-        form.addRow("Pixel scale", self.pixscale_spin)
+        form.addRow("Pixel scale / WCS hint", self.pixscale_spin)
         form.addRow(self.load_button)
+        form.addRow(self.solve_observed_wcs_check)
+        form.addRow(self.align_observed_north_up_check)
+        form.addRow(self.load_observed_button)
         layout.addWidget(box)
 
         contrast_box = QGroupBox("Contrast")
@@ -348,7 +371,7 @@ class MainWindow(QMainWindow):
         source_box = QGroupBox("Injected SN")
         source_form = QFormLayout(source_box)
         self.inject_check = QCheckBox("Show injected SN")
-        self.inject_check.setChecked(True)
+        self.inject_check.setChecked(False)
         self.magnitude_spin = QDoubleSpinBox()
         self.magnitude_spin.setRange(8.0, 24.0)
         self.magnitude_spin.setValue(18.0)
@@ -663,6 +686,20 @@ class MainWindow(QMainWindow):
             pixel_scale_arcsec=self.pixscale_spin.value(),
         )
         self._run_worker("Loading image cutout...", load_image_with_fwhm_estimate, self._image_loaded, self.target, request)
+
+    def load_observed_image(self) -> None:
+        if self.target is None:
+            self.show_error("Search or load a target before opening an observed image.")
+            return
+        filename, _ = QFileDialog.getOpenFileName(self, "Open observed FITS image", "", "FITS images (*.fits *.fit *.fts);;All files (*)")
+        if filename:
+            solve_wcs = self.solve_observed_wcs_check.isChecked()
+            scale_hint = self.pixscale_spin.value() if solve_wcs else None
+            self._run_worker(
+                "Solving WCS and loading observed FITS..." if solve_wcs else "Loading observed FITS image...",
+                load_observed_with_fwhm_estimate, self._image_loaded, Path(filename), self.target,
+                solve_wcs, scale_hint, self.align_observed_north_up_check.isChecked(),
+            )
 
     def _image_loaded(self, result: tuple[ImageData, float | None, int | None, float | None]) -> None:
         self.load_button.setEnabled(True)

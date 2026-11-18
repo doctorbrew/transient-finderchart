@@ -13,12 +13,15 @@ struct PipelineParams: Codable, Equatable {
     var band: String = "r"
     var sizeArcmin: Double = 3.0
     var pixelScaleArcsec: Double = 0.262
+    var observedImagePath: String = ""
+    var solveObservedWCS: Bool = false
+    var alignObservedNorthUp: Bool = true
 
     var psfMagnitude: Double = 18.0
     var psfModel: String = "moffat"
     var psfFwhmArcsec: Double = 1.0
     var insetZoomFactor: Double = 6.0
-    var showInjectedSource: Bool = true
+    var showInjectedSource: Bool = false
     var showCrosshair: Bool = true
     var showSlit: Bool = false
     var showCompass: Bool = true

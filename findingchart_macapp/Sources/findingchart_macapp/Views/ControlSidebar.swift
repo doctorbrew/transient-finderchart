@@ -1,4 +1,5 @@
 import SwiftUI
+import AppKit
 
 struct ControlSidebar: View {
     @ObservedObject var vm: PipelineViewModel
@@ -43,7 +44,7 @@ struct ControlSidebar: View {
 
     private var archiveImageSection: some View {
         VStack(alignment: .leading, spacing: 8) {
-            SectionHeader(systemName: "photo", title: "Archive Image")
+            SectionHeader(systemName: "photo", title: "Image")
             Picker("Survey", selection: $vm.params.survey) {
                 ForEach(vm.surveys, id: \.self) { Text($0).tag($0) }
             }
@@ -53,9 +54,22 @@ struct ControlSidebar: View {
             }
             Grid(alignment: .leading, horizontalSpacing: 8, verticalSpacing: 8) {
                 NumericField(title: "Field", unit: "arcmin", value: $vm.params.sizeArcmin, digits: 2)
-                NumericField(title: "Pixel scale", unit: "\"/pix", value: $vm.params.pixelScaleArcsec, digits: 3)
+                NumericField(title: "Pixel scale / WCS hint", unit: "\"/pix", value: $vm.params.pixelScaleArcsec, digits: 3)
             }
-            ActionButton(title: "Load Image", systemName: "square.and.arrow.down", disabled: vm.isRunning, action: vm.loadImage)
+            ActionButton(title: "Load Archive Image", systemName: "square.and.arrow.down", disabled: vm.isRunning, action: vm.loadImage)
+            LabeledToggle(title: "Solve observed WCS with SExtractor + Astrometry.net", value: $vm.params.solveObservedWCS)
+            LabeledToggle(title: "Align observed image north up, east left", value: $vm.params.alignObservedNorthUp)
+            ActionButton(title: "Open Observed FITS...", systemName: "folder", disabled: vm.isRunning) {
+                let panel = NSOpenPanel()
+                panel.canChooseDirectories = false
+                panel.allowsMultipleSelection = false
+                panel.message = vm.params.solveObservedWCS
+                    ? "Choose a FITS image to solve using the target coordinates and pixel scale hint"
+                    : "Choose a FITS image with celestial WCS"
+                if panel.runModal() == .OK, let path = panel.url?.path {
+                    vm.loadObservedImage(at: path)
+                }
+            }
         }
         .glassCard()
     }

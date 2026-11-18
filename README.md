@@ -3,10 +3,9 @@
 [![Python 3.9+](https://img.shields.io/badge/python-3.9%2B-blue.svg)](pyproject.toml)
 [![Qt GUI](https://img.shields.io/badge/GUI-PySide6%20%2F%20PyQt6-green.svg)](findingchart_guiplotter/qt_compat.py)
 [![macOS SwiftUI](https://img.shields.io/badge/macOS%2014%2B-SwiftUI-black.svg)](findingchart_macapp)
-[![Tests](https://img.shields.io/badge/tests-62%20passed-brightgreen.svg)](tests)
 [![License: GPLv3](https://img.shields.io/badge/license-GPLv3-blue.svg)](LICENSE)
 
-Finding-chart tool for supernovae and other transients, available as a Qt desktop GUI and a native macOS app. Resolve TNS or add manual targets, fetch archival survey cutouts, add a visual fake source and observing overlays (slit and blind offset star), then export the finding chart as PNG, JPEG, or PDF charts.
+Finding-chart tool for supernovae and other transients, available as a Qt desktop GUI and a native macOS app. Resolve TNS or add manual targets, fetch archival survey cutouts or open an observed FITS image, add observing overlays (slit and blind offset star), then export the finding chart as PNG, JPEG, or PDF charts. Fake-source injection is optional and starts off.
 
 The chart design is inspired by Sean Brennan's [`Astro-Sean/finder_chart`](https://github.com/Astro-Sean/finder_chart).
 
@@ -14,7 +13,7 @@ The chart design is inspired by Sean Brennan's [`Astro-Sean/finder_chart`](https
 
 ## Features
 
-- **Images:** Pan-STARRS, Legacy Survey, DSS2, and 2MASS cutouts with survey filters and supported color composites.
+- **Images:** Pan-STARRS, Legacy Survey, DSS2, and 2MASS cutouts with survey filters and supported color composites, plus local observed FITS images. Images without WCS can be solved locally when SExtractor, Astrometry.net, and index files are installed.
 - **Charts:** WCS-aware inset, slit PA, parallactic angle, compass, scale bar, crosshair, contrast controls, and color maps.
 - **Fake source:** automatic FWHM estimation plus Moffat and empirical PSF models with adjustable brightness.
 - **Catalogs:** Gaia DR3 and Pan-STARRS DR2 overlays with magnitude/distance cuts and selectable markers.
@@ -71,9 +70,9 @@ See the [native interface README](findingchart_macapp/README.md) for bridge and 
 ## Workflow
 
 1. Resolve a TNS/IAU/ZTF name or enter custom coordinates.
-2. Choose the survey, filter, field size, and pixel scale; then load the cutout.
+2. Choose the survey, filter, field size, and pixel scale and load a cutout, or open a two-dimensional observed FITS image. Observed images are aligned north up and east left by default; this resamples and crops the chart view to a fully covered rectangle while leaving the FITS file unchanged. Turn off **Align observed image north up, east left** to retain detector orientation. The observed chart uses the same renderer and typography as archival charts; its title takes the telescope, instrument, and filter from the FITS header when available. For an image without usable celestial WCS, select **Solve WCS with SExtractor + Astrometry.net** and enter an approximate pixel scale before opening it. The target must be in the image.
 3. Optionally query Gaia DR3 or Pan-STARRS DR2 and select a star for blind-offset details.
-4. Adjust the slit, parallactic angle, overlays, fake source, inset, observatory/time, and contrast.
+4. Adjust the slit, parallactic angle, overlays, optional fake source, inset, observatory/time, and contrast.
 5. Export the chart.
 
 ## Configuration and notes
@@ -94,7 +93,9 @@ Without credentials, the app uses public TNS search where possible.
 - Gaia proper motion is displayed but is not propagated to the observing epoch.
 - Slit and blind-offset PA are measured east of north.
 - The fake source is visual only, not a calibrated photometric simulation.
+- Local WCS solving uses AstrOmatic SExtractor for source detection and Astrometry.net `solve-field` for the astrometric solution; SCAMP is not required. It searches within 2° of the target and within a factor of two of the pixel-scale hint, with a 120-second timeout. The input FITS file is never modified. Solving can fail for sparse fields or missing index coverage. See the [Astrometry.net solver documentation](https://astrometry.net/doc/readme.html#source-extractor) and [index-file documentation](https://astrometry.net/doc/build-index.html).
+- The development web interface accepts observed FITS uploads up to 64 MB; desktop interfaces open local FITS files directly.
 - Web exports accumulate in `web_exports/`; native outputs and caches use `findingchart_macapp/rendered_charts/`.
-- Run `python3 -m pytest -q` for the 62-test offline suite.
+- Run `python3 -m pytest -q` for the offline suite.
 - Run `python3 tests/psf_diagnostics.py` to regenerate plots in `tests/figures/`.
 - See [docs/IMPLEMENTATION_LOG.md](docs/IMPLEMENTATION_LOG.md) for the implementation history, audit, roadmap, and detailed limitations.

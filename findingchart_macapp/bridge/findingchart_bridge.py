@@ -249,8 +249,8 @@ def _image_request(payload: dict[str, Any]):
 
 
 def _load_image(payload: dict[str, Any], repo_dir: Path) -> dict[str, Any]:
-    from findingchart_guiplotter.image_fetchers import fetch_image
-    from findingchart_guiplotter.models import ChartSettings
+    from findingchart_guiplotter.image_fetchers import fetch_image, load_observed_fits
+    from findingchart_guiplotter.models import ChartSettings, ImageRequest
     from findingchart_guiplotter.renderer import (
         contrast_limits,
         measured_image_fwhm_arcsec,
@@ -260,7 +260,23 @@ def _load_image(payload: dict[str, Any], repo_dir: Path) -> dict[str, Any]:
 
     target = _parse_target(payload)
     request = _image_request(payload)
-    image = fetch_image(target, request)
+    observed_path = str(payload.get("observedImagePath") or "").strip()
+    image = (
+        load_observed_fits(
+            Path(observed_path), target,
+            solve_wcs=bool(payload.get("solveObservedWCS", False)),
+            pixel_scale_arcsec=request.pixel_scale_arcsec if payload.get("solveObservedWCS", False) else None,
+            align_north_up=bool(payload.get("alignObservedNorthUp", True)),
+        )
+        if observed_path else fetch_image(target, request)
+    )
+    if observed_path:
+        from findingchart_guiplotter.renderer import image_fov_arcsec
+        request = ImageRequest(
+            survey="Observed image", mode="Single band", band=image.band,
+            size_arcmin=image_fov_arcsec(image) / 60.0,
+            pixel_scale_arcsec=pixel_scale_arcsec(image),
+        )
     guide_settings = ChartSettings(
         auto_contrast=True,
         contrast_percentile=float(payload.get("contrastPercentile") or 99.3),
@@ -323,7 +339,7 @@ def _load_image(payload: dict[str, Any], repo_dir: Path) -> dict[str, Any]:
 def _load_image_cache(payload: dict[str, Any]) -> dict[str, Any]:
     cache = str(payload.get("imageCachePath") or "").strip()
     if not cache:
-        raise RuntimeError("Load an archive image before rendering.")
+        raise RuntimeError("Load an image before rendering.")
     with Path(cache).open("rb") as handle:
         return pickle.load(handle)
 
@@ -365,7 +381,7 @@ def _settings(payload: dict[str, Any], target, catalog_sources: list[Any]):
         psf_magnitude=float(payload.get("psfMagnitude", 18.0)),
         psf_model=str(payload.get("psfModel") or "moffat"),
         psf_fwhm_arcsec=float(payload.get("psfFwhmArcsec", 1.0)),
-        show_injected_source=bool(payload.get("showInjectedSource", True)),
+        show_injected_source=bool(payload.get("showInjectedSource", False)),
         show_crosshair=bool(payload.get("showCrosshair", True)),
         show_slit=bool(payload.get("showSlit", False)),
         show_compass=bool(payload.get("showCompass", True)),

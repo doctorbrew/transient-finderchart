@@ -71,11 +71,21 @@ final class PipelineViewModel: ObservableObject {
     }
 
     func loadImage() {
+        params.observedImagePath = ""
+        loadSelectedImage()
+    }
+
+    func loadObservedImage(at path: String) {
+        params.observedImagePath = path
+        loadSelectedImage()
+    }
+
+    private func loadSelectedImage() {
         params.catalogCachePath = ""
         params.selectedCatalogSourceID = ""
         catalogSources = []
         selectedCatalogDetail = ""
-        runBridge(action: "loadImage", statusText: "Loading archive image...") { output in
+        runBridge(action: "loadImage", statusText: "Loading image...") { output in
             let previousMeasuredFwhm = self.result?.measuredFwhmArcsec
             let previousRecommendedMagnitude = self.result?.recommendedPsfMagnitude
             self.applyTarget(output.target)
@@ -97,14 +107,14 @@ final class PipelineViewModel: ObservableObject {
                 self.params.vmax = vmax
             }
             self.result = output
-            self.status = output.message ?? "Archive image loaded."
+            self.status = output.message ?? "Image loaded."
             self.scheduleLiveRender()
         }
     }
 
     func queryCatalog() {
         guard hasLoadedImage else {
-            errorText = "Load an archive image before querying catalogs."
+            errorText = "Load an image before querying catalogs."
             status = "Catalog query skipped."
             return
         }

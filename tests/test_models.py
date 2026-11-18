@@ -1,4 +1,4 @@
-from findingchart_guiplotter.models import Target
+from findingchart_guiplotter.models import ChartSettings, Target
 
 
 def test_target_label_includes_first_distinct_alias():
@@ -11,3 +11,7 @@ def test_target_label_omits_duplicate_alias():
     target = Target(display_name="SN 2023ixf", ra_deg=210.0, dec_deg=54.0, aliases=["SN 2023ixf"])
 
     assert target.label == "SN 2023ixf"
+
+
+def test_chart_starts_without_a_fake_source():
+    assert ChartSettings().show_injected_source is False

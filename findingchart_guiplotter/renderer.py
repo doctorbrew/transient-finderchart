@@ -578,6 +578,8 @@ def chart_title(image: ImageData, target: Target) -> str:
 
 
 def survey_filter_label(image: ImageData) -> str:
+    if image.chart_source_label:
+        return image.chart_source_label
     band = image.band.replace(" JPEG", "").strip()
     survey_prefixes = {
         "DSS2": "DSS2 ",

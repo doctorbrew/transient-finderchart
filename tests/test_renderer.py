@@ -3,6 +3,7 @@ import pytest
 from astropy import units as u
 from astropy.coordinates import SkyCoord
 from matplotlib.figure import Figure
+from matplotlib.backends.backend_agg import FigureCanvasAgg
 from matplotlib.patches import ConnectionPatch
 from mpl_toolkits.axes_grid1.inset_locator import inset_axes
 
@@ -38,8 +39,37 @@ from findingchart_guiplotter.renderer import (
     main_scalebar_length_for_field_arcsec,
     marker_unit_vectors,
     world_to_scalar_pixel,
+    draw_chart,
 )
 from findingchart_guiplotter.empirical_psf import EmpiricalPSFError, inject_psf, moffat_kernel
+
+
+def test_observed_and_archive_charts_share_typography_and_layout():
+    target = Target("SN", 210.0, 54.0)
+    wcs = centered_tan_wcs(target, nx=101, ny=101, pixscale_arcsec=0.25)
+    yy, xx = np.mgrid[:101, :101]
+    data = 100.0 + 500.0 * np.exp(-((xx - 50) ** 2 + (yy - 50) ** 2) / 16)
+    archive = ImageData(data, wcs, "Legacy Survey", "r", "Single band")
+    observed = ImageData(data, wcs, "Observed image", "acquisition", "Single band", chart_source_label="NOT/ALFOSC")
+
+    def render(image):
+        figure = Figure(figsize=(7, 7), dpi=80)
+        FigureCanvasAgg(figure)
+        ax = figure.add_subplot(111, projection=image.wcs)
+        draw_chart(ax, image, target, ChartSettings())
+        figure.subplots_adjust(left=0.08, right=0.985, bottom=0.08, top=0.94)
+        figure.canvas.draw()
+        return ax, np.asarray(figure.canvas.buffer_rgba()).copy()
+
+    archive_ax, archive_pixels = render(archive)
+    observed_ax, observed_pixels = render(observed)
+
+    assert archive_ax.title.get_fontsize() == observed_ax.title.get_fontsize()
+    assert archive_ax.title.get_fontfamily() == observed_ax.title.get_fontfamily()
+    assert [(text.get_text(), text.get_fontsize(), text.get_fontfamily()) for text in archive_ax.texts] == [
+        (text.get_text(), text.get_fontsize(), text.get_fontfamily()) for text in observed_ax.texts
+    ]
+    assert np.array_equal(archive_pixels[55:], observed_pixels[55:])
 
 
 def test_centered_wcs_maps_target_to_displayed_pixel_center():
@@ -449,7 +479,7 @@ def test_image_injection_uses_field_flux_scale_when_empirical_psf_is_available(m
         band="r",
         mode="Single band",
     )
-    settings = ChartSettings(psf_magnitude=18.0, psf_model="empirical hybrid")
+    settings = ChartSettings(psf_magnitude=18.0, psf_model="empirical hybrid", show_injected_source=True)
     kernel = moffat_kernel(4.0, size=41)
     captured = {}
 
@@ -482,7 +512,7 @@ def test_rgb_image_injection_uses_selected_empirical_psf_model(monkeypatch):
         band="grz",
         mode="Color composite",
     )
-    settings = ChartSettings(psf_magnitude=18.0, psf_model="gaussian taper")
+    settings = ChartSettings(psf_magnitude=18.0, psf_model="gaussian taper", show_injected_source=True)
     kernel = moffat_kernel(4.0, size=41)
     captured = {}
 
@@ -531,12 +561,12 @@ def test_image_injection_keeps_total_flux_fixed_as_fwhm_changes_in_empirical_mod
     narrow = image_with_injected_psf(
         image,
         target,
-        ChartSettings(psf_magnitude=18.0, psf_model="empirical hybrid", psf_fwhm_arcsec=1.0),
+        ChartSettings(psf_magnitude=18.0, psf_model="empirical hybrid", psf_fwhm_arcsec=1.0, show_injected_source=True),
     )
     broad = image_with_injected_psf(
         image,
         target,
-        ChartSettings(psf_magnitude=18.0, psf_model="empirical hybrid", psf_fwhm_arcsec=3.0),
+        ChartSettings(psf_magnitude=18.0, psf_model="empirical hybrid", psf_fwhm_arcsec=3.0, show_injected_source=True),
     )
     narrow_delta = narrow - image.data
     broad_delta = broad - image.data
@@ -563,12 +593,12 @@ def test_image_injection_keeps_total_flux_fixed_as_fwhm_changes_in_fallback_mode
     narrow = image_with_injected_psf(
         image,
         target,
-        ChartSettings(psf_magnitude=18.0, psf_model="moffat", psf_fwhm_arcsec=1.0),
+        ChartSettings(psf_magnitude=18.0, psf_model="moffat", psf_fwhm_arcsec=1.0, show_injected_source=True),
     )
     broad = image_with_injected_psf(
         image,
         target,
-        ChartSettings(psf_magnitude=18.0, psf_model="moffat", psf_fwhm_arcsec=3.0),
+        ChartSettings(psf_magnitude=18.0, psf_model="moffat", psf_fwhm_arcsec=3.0, show_injected_source=True),
     )
     narrow_delta = narrow - image.data
     broad_delta = broad - image.data
